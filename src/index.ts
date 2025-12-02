@@ -62,6 +62,7 @@ type CloudflareBindings = {
 
 type Env = {
 	Bindings: CloudflareBindings
+	API_KEY?: string // API key from environment variables (.dev.vars or wrangler.jsonc vars)
 }
 
 // Define request/response types
@@ -87,7 +88,53 @@ type JobRow = {
 	created_at: string
 }
 
-const app = new Hono<{ Bindings: CloudflareBindings }>()
+const app = new Hono<{ Bindings: CloudflareBindings; API_KEY?: string }>()
+
+// API Key Authentication Middleware
+// Checks for API key in Authorization header (Bearer token) or X-API-Key header
+const apiKeyAuth = async (c: Context<{ Bindings: CloudflareBindings; API_KEY?: string }>, next: () => Promise<void>) => {
+	// Skip auth for docs endpoints
+	const path = c.req.path
+	if (path === '/docs' || path === '/openapi.json') {
+		await next()
+		return
+	}
+
+	// Get API key from environment
+	// In Cloudflare Workers, vars from .dev.vars or wrangler.jsonc are available in c.env
+	const expectedApiKey = (c.env as unknown as { Bindings: CloudflareBindings; API_KEY?: string }).API_KEY
+
+	// If no API key is configured, skip authentication
+	if (!expectedApiKey) {
+		await next()
+		return
+	}
+
+	// Get API key from request headers
+	const authHeader = c.req.header('Authorization')
+	const apiKeyHeader = c.req.header('X-API-Key')
+
+	let providedKey: string | undefined
+
+	// Check Authorization header (Bearer token format)
+	if (authHeader && authHeader.startsWith('Bearer ')) {
+		providedKey = authHeader.substring(7)
+	} else if (apiKeyHeader) {
+		// Check X-API-Key header
+		providedKey = apiKeyHeader
+	}
+
+	// Validate API key
+	if (!providedKey || providedKey !== expectedApiKey) {
+		return c.json({ error: 'Unauthorized - Invalid or missing API key' }, 401)
+	}
+
+	// API key is valid, continue
+	await next()
+}
+
+// Apply API key authentication middleware to all routes
+app.use('*', apiKeyAuth)
 
 // OpenAPI schema definition
 const openApiSchema = {

@@ -1,0 +1,8 @@
+# Copy this file to .dev.vars and set your API key
+# .dev.vars is used for local development with wrangler dev
+# This file is gitignored, so your secrets won't be committed
+# 
+# For production, set API_KEY in Cloudflare Dashboard > Workers > Settings > Variables
+# Or set it in wrangler.jsonc vars section (not recommended for production)
+
+API_KEY=your-secret-api-key-here
