@@ -82,16 +82,13 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 ## API & Authentication
 - **Auth**: Every request (except `/docs` and `/openapi.json`) checks for an API key either in an `Authorization: Bearer <token>` header or an `X-API-Key` header. The expected key is pulled from `API_KEY` defined via `.dev.vars` (dev) or Worker environment variables (prod). Leaving `API_KEY` unset disables auth, so make sure to configure it in production.
 
-> Legacy `/jobs`, `/runs`, and `/executions` endpoints now return `410 Gone` and exist only to guide migrations to `/events`.
+Legacy `/jobs`, `/runs`, and `/executions` endpoints have been removed; use `/events` for ingestion and queries.
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| `POST` | `/jobs` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
 | `POST` | `/events` | Insert an event (id + ISO timestamp + JSON payload) into the `events` table. |
 | `GET`  | `/events` | Query events with optional filters (`id`, `after`, `before`, `limit`). |
-| `GET`  | `/runs/:run_id` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
-| `GET`  | `/runs/:run_id/latest` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
-| `GET`  | `/executions/:n8n_execution_id` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
+| `POST` | `/events/query` | Run a parameterized SQL query against the `events` table (read-only). |
 | `GET`  | `/openapi.json` | Machine-readable OpenAPI 3.1 document. |
 | `GET`  | `/docs` | Scalar’s interactive UI fed by the same OpenAPI spec. |
 

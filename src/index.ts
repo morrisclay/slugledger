@@ -84,29 +84,6 @@ type EventQueryRequest = {
 
 const app = new Hono<{ Bindings: CloudflareBindings; API_KEY?: string }>()
 
-const JOBS_DEPRECATION_MESSAGE = 'The /jobs endpoint has been deprecated. Use /events to record workflow activity.'
-const RUNS_DEPRECATION_MESSAGE =
-	'The /runs endpoints have been deprecated. Use /events to inspect workflow history.'
-const EXECUTIONS_DEPRECATION_MESSAGE =
-	'The /executions endpoint has been deprecated. Use /events to inspect workflow history.'
-
-const deprecatedResponseSchema = {
-	type: 'object',
-	properties: {
-		error: { type: 'string', example: 'This endpoint has been deprecated. Use /events instead.' },
-		deprecated: { type: 'boolean', example: true },
-	},
-}
-
-const buildDeprecatedResponse = (description: string) => ({
-	description,
-	content: {
-		'application/json': {
-			schema: deprecatedResponseSchema,
-		},
-	},
-})
-
 // API Key Authentication Middleware
 // Checks for API key in Authorization header (Bearer token) or X-API-Key header
 const apiKeyAuth = async (c: Context<{ Bindings: CloudflareBindings; API_KEY?: string }>, next: () => Promise<void>) => {
@@ -168,17 +145,6 @@ const openApiSchema = {
 		},
 	],
 	paths: {
-		'/jobs': {
-			post: {
-				summary: 'Deprecated jobs endpoint',
-				description: 'This endpoint has been deprecated. Use /events to append workflow activity.',
-				tags: ['Jobs'],
-				deprecated: true,
-				responses: {
-					'410': buildDeprecatedResponse('The /jobs endpoint has been deprecated. Use /events instead.'),
-				},
-			},
-		},
 		'/events': {
 			post: {
 				summary: 'Create a new event entry',
@@ -407,69 +373,6 @@ const openApiSchema = {
 				},
 			},
 		},
-		'/runs/{run_id}': {
-			get: {
-				summary: 'Deprecated runs endpoint',
-				description: 'This endpoint has been deprecated. Use /events instead.',
-				tags: ['Runs'],
-				deprecated: true,
-				parameters: [
-					{
-						name: 'run_id',
-						in: 'path',
-						required: true,
-						schema: { type: 'string' },
-						description: 'Unique identifier for the run',
-						example: 'run-123',
-					},
-				],
-				responses: {
-					'410': buildDeprecatedResponse('The /runs endpoint has been deprecated. Use /events instead.'),
-				},
-			},
-		},
-		'/runs/{run_id}/latest': {
-			get: {
-				summary: 'Deprecated runs endpoint',
-				description: 'This endpoint has been deprecated. Use /events instead.',
-				tags: ['Runs'],
-				deprecated: true,
-				parameters: [
-					{
-						name: 'run_id',
-						in: 'path',
-						required: true,
-						schema: { type: 'string' },
-						description: 'Unique identifier for the run',
-						example: 'run-123',
-					},
-				],
-				responses: {
-					'410': buildDeprecatedResponse('The /runs endpoint has been deprecated. Use /events instead.'),
-				},
-			},
-		},
-		'/executions/{n8n_execution_id}': {
-			get: {
-				summary: 'Deprecated executions endpoint',
-				description: 'This endpoint has been deprecated. Use /events instead.',
-				tags: ['Executions'],
-				deprecated: true,
-				parameters: [
-					{
-						name: 'n8n_execution_id',
-						in: 'path',
-						required: true,
-						schema: { type: 'string' },
-						description: 'n8n execution identifier',
-						example: 'execution-789',
-					},
-				],
-				responses: {
-					'410': buildDeprecatedResponse('The /executions endpoint has been deprecated. Use /events instead.'),
-				},
-			},
-		},
 	},
 }
 
@@ -495,10 +398,6 @@ function handleError(c: Context, error: unknown, statusCode: number = 500) {
 	return c.json({ error: message }, statusCode)
 }
 
-const respondDeprecated = (c: Context, message: string) => {
-	return c.json({ error: message, deprecated: true }, 410)
-}
-
 const isIsoTimestamp = (value: string) => {
 	return !Number.isNaN(Date.parse(value))
 }
@@ -516,12 +415,6 @@ const generateEventId = () => {
 		return value.toString(16)
 	})
 }
-
-// POST /jobs
-// Deprecated endpoint placeholder
-app.post('/jobs', (c) => {
-	return respondDeprecated(c, JOBS_DEPRECATION_MESSAGE)
-})
 
 // POST /events
 // Insert a new event row into the events table
@@ -696,24 +589,6 @@ app.post('/events/query', async (c) => {
 	} catch (error) {
 		return handleError(c, error)
 	}
-})
-
-// GET /runs/:run_id
-// Deprecated endpoint placeholder
-app.get('/runs/:run_id', (c) => {
-	return respondDeprecated(c, RUNS_DEPRECATION_MESSAGE)
-})
-
-// GET /runs/:run_id/latest
-// Deprecated endpoint placeholder
-app.get('/runs/:run_id/latest', (c) => {
-	return respondDeprecated(c, RUNS_DEPRECATION_MESSAGE)
-})
-
-// GET /executions/:n8n_execution_id
-// Deprecated endpoint placeholder
-app.get('/executions/:n8n_execution_id', (c) => {
-	return respondDeprecated(c, EXECUTIONS_DEPRECATION_MESSAGE)
 })
 
 export default app
