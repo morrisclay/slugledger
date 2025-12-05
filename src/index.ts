@@ -67,7 +67,7 @@ type Env = {
 
 type EventCreateRequest = {
 	id?: string
-	ts: string
+	ts?: string
 	payload: unknown
 }
 
@@ -156,7 +156,7 @@ const openApiSchema = {
 						'application/json': {
 							schema: {
 								type: 'object',
-								required: ['ts', 'payload'],
+								required: ['payload'],
 								properties: {
 									id: {
 										type: 'string',
@@ -167,7 +167,8 @@ const openApiSchema = {
 									ts: {
 										type: 'string',
 										format: 'date-time',
-										description: 'ISO8601 timestamp representing when the event occurred',
+										description:
+											'ISO8601 timestamp representing when the event occurred. Optional — server will assign the current timestamp when omitted.',
 										example: '2024-01-01T12:00:00.000Z',
 									},
 									payload: {
@@ -432,8 +433,14 @@ app.post('/events', async (c) => {
 			eventId = generateEventId()
 		}
 
-		if (!body.ts || typeof body.ts !== 'string' || !isIsoTimestamp(body.ts)) {
-			return c.json({ error: 'ts must be a valid ISO timestamp string' }, 400)
+		let timestamp: string
+		if (body.ts !== undefined) {
+			if (typeof body.ts !== 'string' || body.ts.trim().length === 0 || !isIsoTimestamp(body.ts)) {
+				return c.json({ error: 'ts must be a valid ISO timestamp string when provided' }, 400)
+			}
+			timestamp = body.ts.trim()
+		} else {
+			timestamp = new Date().toISOString()
 		}
 
 		if (body.payload === undefined) {
@@ -448,7 +455,7 @@ app.post('/events', async (c) => {
 		}
 
 		const stmt = c.env.DB.prepare(`INSERT INTO events (id, ts, payload) VALUES (?, ?, ?)`)
-		const result = await stmt.bind(eventId, body.ts, payloadJson).run()
+		const result = await stmt.bind(eventId, timestamp, payloadJson).run()
 
 		if (!result.success) {
 			return c.json({ error: 'Failed to insert event' }, 500)

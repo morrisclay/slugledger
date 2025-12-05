@@ -41,7 +41,6 @@ curl -X POST http://127.0.0.1:8787/events \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-        "ts": "2024-01-01T12:00:00.000Z",
         "payload": {
           "type": "workflow.notification",
           "run_id": "run-123"
@@ -49,7 +48,7 @@ curl -X POST http://127.0.0.1:8787/events \
       }'
 ```
 
-You should receive `{ "success": true, "id": "<uuid>" }`.
+You should receive `{ "success": true, "id": "<uuid>" }` — the Worker records the payload with the current ISO timestamp automatically.
 
 ## 7. Explore and test with Scalar
 
