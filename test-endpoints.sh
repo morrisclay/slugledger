@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Test script for n8n workflow ledger API
+# Requirements: curl and node (for JSON parsing)
 # Make sure wrangler dev is running on http://localhost:8787
 
 BASE_URL="http://localhost:8787"
@@ -192,6 +193,59 @@ else
     echo "❌ Test 8 FAILED - Event not found in response"
   else
     echo "Event located: $EVENT_ID"
+  fi
+fi
+echo ""
+
+AUTO_EVENT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Test 9: POST /events without providing id
+echo "9. Testing POST /events without id"
+echo "----------------------------------"
+RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/events" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"ts\": \"$AUTO_EVENT_TS\",
+    \"payload\": {
+      \"type\": \"workflow.notification\",
+      \"detail\": \"auto-id\"
+    }
+  }")
+
+HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
+BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
+echo "Response: $BODY"
+echo "HTTP Code: $HTTP_CODE"
+echo ""
+
+AUTO_EVENT_ID=$(echo "$BODY" | node -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); process.stdout.write(data.id ?? '');")
+
+if [ "$HTTP_CODE" != "201" ] || [ -z "$AUTO_EVENT_ID" ]; then
+  echo "❌ Test 9 FAILED - Expected 201 with generated id"
+else
+  echo "✅ Test 9 PASSED - Generated id: $AUTO_EVENT_ID"
+fi
+echo ""
+
+# Test 10: GET /events?id=<generated id>
+echo "10. Testing GET /events?id=auto-generated"
+echo "----------------------------------------"
+RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "$BASE_URL/events" --data-urlencode "id=$AUTO_EVENT_ID" --data-urlencode "limit=1")
+
+HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
+BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
+echo "Response: $BODY"
+echo "HTTP Code: $HTTP_CODE"
+echo ""
+
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "❌ Test 10 FAILED - Expected 200, got $HTTP_CODE"
+else
+  MATCH=$(echo "$BODY" | grep -o "\"id\":\"$AUTO_EVENT_ID\"")
+  if [ -z "$MATCH" ]; then
+    echo "❌ Test 10 FAILED - Auto-generated event not found"
+  else
+    echo "✅ Test 10 PASSED - Auto-generated event retrieved"
   fi
 fi
 echo ""
