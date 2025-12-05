@@ -447,9 +447,25 @@ app.post('/events', async (c) => {
 			return c.json({ error: 'payload is required' }, 400)
 		}
 
+		let normalizedPayload: unknown = body.payload
+		if (typeof normalizedPayload === 'string') {
+			const originalPayload = normalizedPayload
+			const trimmedPayload = originalPayload.trim()
+			if (trimmedPayload.length > 0) {
+				try {
+					normalizedPayload = JSON.parse(trimmedPayload)
+				} catch {
+					// Leave as original string if it isn't valid JSON
+					normalizedPayload = originalPayload
+				}
+			} else {
+				normalizedPayload = originalPayload
+			}
+		}
+
 		let payloadJson: string
 		try {
-			payloadJson = JSON.stringify(body.payload)
+			payloadJson = JSON.stringify(normalizedPayload)
 		} catch {
 			return c.json({ error: 'payload must be JSON-serializable' }, 400)
 		}
