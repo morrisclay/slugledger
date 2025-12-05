@@ -67,25 +67,38 @@ type Env = {
 
 // Define request/response types
 type JobCreateRequest = {
-	run_id: string
-	n8n_workflow_id: string
-	n8n_execution_id: string
-	n8n_status_code: number
-	n8n_status_message: string
+	run_id?: string
+	n8n_workflow_id?: string
+	n8n_execution_id?: string
+	n8n_status_code?: number
+	n8n_status_message?: string
 	data?: Record<string, unknown> // Optional: if present, upload to R2
 	metadata?: Record<string, unknown> // Optional: stored in D1 and R2 customMetadata (if R2 upload)
 }
 
 type JobRow = {
 	id: number
-	run_id: string
-	n8n_workflow_id: string
-	n8n_execution_id: string
-	n8n_status_code: number
-	n8n_status_message: string
+	run_id: string | null
+	n8n_workflow_id: string | null
+	n8n_execution_id: string | null
+	n8n_status_code: number | null
+	n8n_status_message: string | null
 	r2_pointer: string | null
 	metadata: string | null
 	created_at: string
+}
+
+const normalizeString = (value?: string | null) => {
+	if (typeof value !== 'string') {
+		return null
+	}
+	const trimmed = value.trim()
+	return trimmed.length > 0 ? trimmed : null
+}
+
+const sanitizePathSegment = (value: string, fallback: string) => {
+	const sanitized = value.replace(/[^a-zA-Z0-9._-]/g, '_')
+	return sanitized.length > 0 ? sanitized : fallback
 }
 
 const app = new Hono<{ Bindings: CloudflareBindings; API_KEY?: string }>()
@@ -163,30 +176,34 @@ const openApiSchema = {
 						'application/json': {
 							schema: {
 								type: 'object',
-								required: ['run_id', 'n8n_workflow_id', 'n8n_execution_id', 'n8n_status_code', 'n8n_status_message'],
 								properties: {
 									run_id: {
 										type: 'string',
+										nullable: true,
 										description: 'Unique identifier for the run',
 										example: 'run-123',
 									},
 									n8n_workflow_id: {
 										type: 'string',
+										nullable: true,
 										description: 'n8n workflow identifier',
 										example: 'workflow-456',
 									},
 									n8n_execution_id: {
 										type: 'string',
+										nullable: true,
 										description: 'n8n execution identifier',
 										example: 'execution-789',
 									},
 									n8n_status_code: {
 										type: 'integer',
+										nullable: true,
 										description: 'HTTP status code from n8n',
 										example: 201,
 									},
 									n8n_status_message: {
 										type: 'string',
+										nullable: true,
 										description: 'Status message from n8n',
 										example: 'workflow_started',
 									},
@@ -240,13 +257,13 @@ const openApiSchema = {
 						},
 					},
 					'400': {
-						description: 'Bad request - missing required fields',
+						description: 'Bad request',
 						content: {
 							'application/json': {
 								schema: {
 									type: 'object',
 									properties: {
-										error: { type: 'string', example: 'Missing required fields' },
+										error: { type: 'string', example: 'Invalid request payload' },
 									},
 								},
 							},
@@ -297,11 +314,11 @@ const openApiSchema = {
 												type: 'object',
 												properties: {
 													id: { type: 'integer' },
-													run_id: { type: 'string' },
-													n8n_workflow_id: { type: 'string' },
-													n8n_execution_id: { type: 'string' },
-													n8n_status_code: { type: 'integer' },
-													n8n_status_message: { type: 'string' },
+													run_id: { type: 'string', nullable: true },
+													n8n_workflow_id: { type: 'string', nullable: true },
+													n8n_execution_id: { type: 'string', nullable: true },
+													n8n_status_code: { type: 'integer', nullable: true },
+													n8n_status_message: { type: 'string', nullable: true },
 													r2_pointer: { type: 'string', nullable: true },
 													metadata: { type: 'object', nullable: true, additionalProperties: true },
 													created_at: { type: 'string', format: 'date-time' },
@@ -353,11 +370,11 @@ const openApiSchema = {
 									type: 'object',
 									properties: {
 										id: { type: 'integer' },
-										run_id: { type: 'string' },
-										n8n_workflow_id: { type: 'string' },
-										n8n_execution_id: { type: 'string' },
-										n8n_status_code: { type: 'integer' },
-										n8n_status_message: { type: 'string' },
+										run_id: { type: 'string', nullable: true },
+										n8n_workflow_id: { type: 'string', nullable: true },
+										n8n_execution_id: { type: 'string', nullable: true },
+										n8n_status_code: { type: 'integer', nullable: true },
+										n8n_status_message: { type: 'string', nullable: true },
 										r2_pointer: { type: 'string', nullable: true },
 										metadata: { type: 'object', nullable: true, additionalProperties: true },
 										created_at: { type: 'string', format: 'date-time' },
@@ -411,11 +428,11 @@ const openApiSchema = {
 												type: 'object',
 												properties: {
 													id: { type: 'integer' },
-													run_id: { type: 'string' },
-													n8n_workflow_id: { type: 'string' },
-													n8n_execution_id: { type: 'string' },
-													n8n_status_code: { type: 'integer' },
-													n8n_status_message: { type: 'string' },
+													run_id: { type: 'string', nullable: true },
+													n8n_workflow_id: { type: 'string', nullable: true },
+													n8n_execution_id: { type: 'string', nullable: true },
+													n8n_status_code: { type: 'integer', nullable: true },
+													n8n_status_message: { type: 'string', nullable: true },
 													r2_pointer: { type: 'string', nullable: true },
 													metadata: { type: 'object', nullable: true, additionalProperties: true },
 													created_at: { type: 'string', format: 'date-time' },
@@ -474,38 +491,48 @@ function handleError(c: Context, error: unknown, statusCode: number = 500) {
 // - If `metadata` is present: store in D1 and R2 customMetadata (if R2 upload)
 app.post('/jobs', async (c) => {
 	try {
-		const body = await c.req.json<JobCreateRequest>()
-
-		// Validate required fields
-		if (
-			!body.run_id ||
-			!body.n8n_workflow_id ||
-			!body.n8n_execution_id ||
-			typeof body.n8n_status_code !== 'number' ||
-			!body.n8n_status_message
-		) {
-			return c.json({ error: 'Missing required fields' }, 400)
+		let body: JobCreateRequest
+		try {
+			body = await c.req.json<JobCreateRequest>()
+		} catch {
+			body = {}
 		}
 
+		const runId = normalizeString(body.run_id)
+		const workflowId = normalizeString(body.n8n_workflow_id)
+		const executionId = normalizeString(body.n8n_execution_id)
+		let statusCodeToStore = typeof body.n8n_status_code === 'number' ? body.n8n_status_code : null
+		let statusMessageToStore = normalizeString(body.n8n_status_message)
+
 		let r2Key: string | null = null
-		// Check if data is provided and not empty
-		const hasData =
+		const dataPayload =
 			body.data !== undefined &&
 			body.data !== null &&
 			typeof body.data === 'object' &&
 			Object.keys(body.data).length > 0
-		// Check if metadata is provided and not empty
-		const hasMetadata =
+				? body.data
+				: null
+		const metadataPayload =
 			body.metadata !== undefined &&
 			body.metadata !== null &&
 			typeof body.metadata === 'object' &&
 			Object.keys(body.metadata).length > 0
+				? body.metadata
+				: null
 
 		// If data is present, upload to R2
-		if (hasData) {
-			// Generate R2 key: results/{run_id}/{n8n_workflow_id}/{n8n_execution_id}/{timestamp}.json
+		if (dataPayload) {
+			const buildFallbackSegment = (label: string) => `unassigned-${label}`
+			const buildSegment = (value: string | null, label: string) =>
+				sanitizePathSegment(value ?? buildFallbackSegment(label), buildFallbackSegment(label))
+
 			const timestamp = Date.now()
-			r2Key = `results/${body.run_id}/${body.n8n_workflow_id}/${body.n8n_execution_id}/${timestamp}.json`
+			const randomSuffix = Math.random().toString(36).slice(2, 8)
+			const runSegment = buildSegment(runId, 'run')
+			const workflowSegment = buildSegment(workflowId, 'workflow')
+			const executionSegment = buildSegment(executionId, 'execution')
+
+			r2Key = `results/${runSegment}/${workflowSegment}/${executionSegment}/${timestamp}-${randomSuffix}.json`
 
 			// Prepare R2 upload options
 			const r2Options: R2PutOptions = {
@@ -515,25 +542,25 @@ app.post('/jobs', async (c) => {
 			}
 
 			// If metadata is present, add it to R2 customMetadata
-			if (hasMetadata) {
+			if (metadataPayload) {
 				const customMetadata: Record<string, string> = {}
-				for (const [key, value] of Object.entries(body.metadata!)) {
+				for (const [key, value] of Object.entries(metadataPayload)) {
 					customMetadata[key] = typeof value === 'string' ? value : JSON.stringify(value)
 				}
 				r2Options.customMetadata = customMetadata
 			}
 
 			// Upload data to R2
-			const dataJson = JSON.stringify(body.data)
+			const dataJson = JSON.stringify(dataPayload)
 			await c.env.R2.put(r2Key, dataJson, r2Options)
 
 			// If data is present, override status to indicate result storage
-			body.n8n_status_code = 200
-			body.n8n_status_message = 'result_stored'
+			statusCodeToStore = 200
+			statusMessageToStore = 'result_stored'
 		}
 
 		// Prepare metadata JSON for D1
-		const metadataJson = hasMetadata ? JSON.stringify(body.metadata) : null
+		const metadataJson = metadataPayload ? JSON.stringify(metadataPayload) : null
 
 		// Insert new row (append-only)
 		const stmt = c.env.DB.prepare(
@@ -550,11 +577,11 @@ app.post('/jobs', async (c) => {
 
 		const result = await stmt
 			.bind(
-				body.run_id,
-				body.n8n_workflow_id,
-				body.n8n_execution_id,
-				body.n8n_status_code,
-				body.n8n_status_message,
+				runId,
+				workflowId,
+				executionId,
+				statusCodeToStore,
+				statusMessageToStore,
 				r2Key,
 				metadataJson
 			)
@@ -575,8 +602,8 @@ app.post('/jobs', async (c) => {
 			response.key = r2Key
 		}
 
-		if (hasMetadata) {
-			response.metadata = body.metadata
+		if (metadataPayload) {
+			response.metadata = metadataPayload
 		}
 
 		return c.json(response, 201)
