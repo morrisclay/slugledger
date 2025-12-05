@@ -3,8 +3,7 @@
 Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records the lifecycle of your [n8n](https://n8n.io/) workflows in D1 (metadata) and optionally streams large JSON payloads into R2 for inexpensive, durable storage. The API is implemented with [Hono](https://hono.dev/), documented via Scalar, and secured with a simple API-key gate.
 
 ### Highlights
-- Single POST endpoint to capture workflow start/end metadata plus optional arbitrary JSON payloads.
-- Automatic promotion of payloads to R2 when `data` is provided, with coordinated metadata stored alongside the D1 row.
+- Event-centric POST endpoint (`/events`) for capturing workflow lifecycle data with optional custom IDs.
 - Instant OpenAPI + Scalar docs available at `/openapi.json` and `/docs`.
 - Designed for append-only auditing: no update/delete mutations.
 
@@ -72,36 +71,32 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 ## API & Authentication
 - **Auth**: Every request (except `/docs` and `/openapi.json`) checks for an API key either in an `Authorization: Bearer <token>` header or an `X-API-Key` header. The expected key is pulled from `API_KEY` defined via `.dev.vars` (dev) or Worker environment variables (prod). Leaving `API_KEY` unset disables auth, so make sure to configure it in production.
 
+> Legacy `/jobs`, `/runs`, and `/executions` endpoints now return `410 Gone` and exist only to guide migrations to `/events`.
+
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| `POST` | `/jobs` | Append a ledger entry. Optionally include `data` to persist JSON to R2 and `metadata` for contextual fields. |
+| `POST` | `/jobs` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
 | `POST` | `/events` | Insert an event (id + ISO timestamp + JSON payload) into the `events` table. |
 | `GET`  | `/events` | Query events with optional filters (`id`, `after`, `before`, `limit`). |
-| `GET`  | `/runs/:run_id` | List every entry for a run ordered by `created_at ASC`. |
-| `GET`  | `/runs/:run_id/latest` | Fetch the newest entry for a run. |
-| `GET`  | `/executions/:n8n_execution_id` | List entries for a single n8n execution. |
+| `GET`  | `/runs/:run_id` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
+| `GET`  | `/runs/:run_id/latest` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
+| `GET`  | `/executions/:n8n_execution_id` | **Deprecated** – always returns `410 Gone`. Use `/events`. |
 | `GET`  | `/openapi.json` | Machine-readable OpenAPI 3.1 document. |
 | `GET`  | `/docs` | Scalar’s interactive UI fed by the same OpenAPI spec. |
 
-### Example: create a ledger entry
+### Example: create an event
 ```bash
-curl -X POST http://localhost:8787/jobs \
+curl -X POST http://localhost:8787/events \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $API_KEY" \
   -d '{
-    "run_id": "run-123",
-    "n8n_workflow_id": "workflow-456",
-    "n8n_execution_id": "execution-789",
-    "n8n_status_code": 201,
-    "n8n_status_message": "workflow_started",
-    "metadata": { "source": "webhook", "env": "prod" },
-    "data": { "items_processed": 42 }
+    "ts": "2024-01-01T12:00:00.000Z",
+    "payload": {
+      "type": "workflow.notification",
+      "run_id": "run-123"
+    }
   }'
 ```
-If `data` is provided and non-empty, Slugledger:
-1. Uploads the JSON blob to R2 (`results/<run>/<workflow>/<execution>/<timestamp>.json`).
-2. Stores the pointer plus metadata in D1.
-3. Overwrites `n8n_status_code/message` with `200/result_stored` so downstream consumers can distinguish storage outcomes.
 
 ---
 
