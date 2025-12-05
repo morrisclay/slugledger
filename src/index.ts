@@ -88,6 +88,11 @@ type JobRow = {
 	created_at: string
 }
 
+type SqlQueryRequest = {
+	query: string
+	params?: unknown[]
+}
+
 const app = new Hono<{ Bindings: CloudflareBindings; API_KEY?: string }>()
 
 // API Key Authentication Middleware
@@ -151,6 +156,90 @@ const openApiSchema = {
 		},
 	],
 	paths: {
+		'/sql': {
+			post: {
+				summary: 'Execute an arbitrary SQL query',
+				description:
+					'Runs the provided SQL query against the D1 database. Supports optional positional parameters via `params` array.',
+				tags: ['Utility'],
+				requestBody: {
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								required: ['query'],
+								properties: {
+									query: {
+										type: 'string',
+										description: 'SQL query to execute',
+										example: 'SELECT * FROM jobs LIMIT 10',
+									},
+									params: {
+										type: 'array',
+										description: 'Optional positional parameters bound to the prepared statement',
+										items: {
+											oneOf: [
+												{ type: 'string' },
+												{ type: 'number' },
+												{ type: 'boolean' },
+												{ type: 'object', additionalProperties: true },
+												{ type: 'array', items: {} },
+												{ type: 'null' },
+											],
+										},
+										example: ['run-123'],
+									},
+								},
+							},
+						},
+					},
+				},
+				responses: {
+					'200': {
+						description: 'Query executed successfully',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										success: { type: 'boolean', example: true },
+										operation: { type: 'string', enum: ['read', 'write'] },
+										result: { type: 'object', additionalProperties: true },
+									},
+								},
+							},
+						},
+					},
+					'400': {
+						description: 'Invalid query payload',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										error: { type: 'string', example: 'Query must be a non-empty string' },
+									},
+								},
+							},
+						},
+					},
+					'500': {
+						description: 'Failed to execute query',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										error: { type: 'string', example: 'Internal server error' },
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 		'/jobs': {
 			post: {
 				summary: 'Create a new job ledger entry',
@@ -467,6 +556,46 @@ function handleError(c: Context, error: unknown, statusCode: number = 500) {
 	const message = error instanceof Error ? error.message : 'Internal server error'
 	return c.json({ error: message }, statusCode)
 }
+
+const READ_ONLY_KEYWORDS = new Set(['select', 'pragma', 'with', 'show', 'describe', 'explain'])
+
+// POST /sql
+// Execute an arbitrary SQL query with optional positional parameters
+app.post('/sql', async (c) => {
+	try {
+		const body = await c.req.json<SqlQueryRequest>()
+
+		if (!body || typeof body.query !== 'string' || !body.query.trim()) {
+			return c.json({ error: 'Query must be a non-empty string' }, 400)
+		}
+
+		if (body.params !== undefined && !Array.isArray(body.params)) {
+			return c.json({ error: '`params` must be an array when provided' }, 400)
+		}
+
+		const trimmedQuery = body.query.trim()
+		const keyword = trimmedQuery.split(/\s+/)[0]?.toLowerCase() ?? ''
+		const isReadOperation = READ_ONLY_KEYWORDS.has(keyword)
+
+		let statement = c.env.DB.prepare(trimmedQuery)
+		if (Array.isArray(body.params) && body.params.length > 0) {
+			statement = statement.bind(...body.params)
+		}
+
+		const result = isReadOperation ? await statement.all() : await statement.run()
+
+		return c.json(
+			{
+				success: true,
+				operation: isReadOperation ? 'read' : 'write',
+				result,
+			},
+			200
+		)
+	} catch (error) {
+		return handleError(c, error)
+	}
+})
 
 // POST /jobs
 // Unified endpoint: Insert a new ledger row
