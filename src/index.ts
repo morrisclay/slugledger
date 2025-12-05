@@ -173,7 +173,8 @@ const openApiSchema = {
 									},
 									payload: {
 										type: 'object',
-										description: 'Arbitrary JSON payload describing the event',
+										description:
+											'Arbitrary JSON payload describing the event. If you include a `data` object, the Worker uploads it to R2 and replaces it with a `data_pointer` field referencing the stored object.',
 										additionalProperties: true,
 										example: { type: 'user.signup', user_id: 'user_42' },
 									},
@@ -417,6 +418,15 @@ const generateEventId = () => {
 	})
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const buildR2ObjectKey = (eventId: string) => {
+	const randomSuffix = Math.random().toString(36).slice(2, 10)
+	return `events/${eventId}/${Date.now()}-${randomSuffix}.json`
+}
+
 // POST /events
 // Insert a new event row into the events table
 app.post('/events', async (c) => {
@@ -460,6 +470,33 @@ app.post('/events', async (c) => {
 				}
 			} else {
 				normalizedPayload = originalPayload
+			}
+		}
+
+		if (isRecord(normalizedPayload) && Object.prototype.hasOwnProperty.call(normalizedPayload, 'data')) {
+			const dataValue = normalizedPayload.data
+			if (typeof dataValue === 'object' && dataValue !== null) {
+				if (!c.env.R2) {
+					return c.json({ error: 'R2 bucket is not configured' }, 500)
+				}
+
+				let dataJson: string
+				try {
+					dataJson = JSON.stringify(dataValue)
+				} catch {
+					return c.json({ error: 'payload.data must be JSON-serializable' }, 400)
+				}
+
+				const r2Key = buildR2ObjectKey(eventId)
+				const uploadResult = await c.env.R2.put(r2Key, dataJson, {
+					httpMetadata: { contentType: 'application/json' },
+				})
+				if (!uploadResult) {
+					return c.json({ error: 'Failed to persist payload data to R2' }, 500)
+				}
+
+				normalizedPayload.data_pointer = r2Key
+				delete normalizedPayload.data
 			}
 		}
 

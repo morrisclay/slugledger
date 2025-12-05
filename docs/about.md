@@ -21,7 +21,7 @@ Slugledger is an append-only event ledger that runs entirely on Cloudflare Worke
 
 1. Clients call `/events` with any JSON payload (and optional custom `id`); the Worker assigns an ISO timestamp just before persisting.
 2. The Worker enforces API-key auth (skipped for `/docs`/`/openapi.json`), validates the body, and normalizes the payload.
-3. Event metadata is inserted into D1. When payloads exceed your chosen threshold you can stream them into R2 and keep an object pointer in D1 (the helper functions are already scaffolded).
+3. Event metadata is inserted into D1. When a payload includes a `data` object, the Worker serializes it to JSON, writes it to R2, and stores an `data_pointer` reference inside the persisted payload instead of the raw blob.
 4. Consumers can read rows via `GET /events` filters or run SQL-style analytics with `POST /events/query`.
 
 ### Operational characteristics

@@ -9,6 +9,7 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 
 ### Highlights
 - Event-centric POST endpoint (`/events`) for capturing workflow lifecycle data with optional custom IDs; timestamps are auto-assigned on the server.
+- Automatic R2 offload: when `payload.data` is an object, its JSON is written to R2 and the D1 payload records a `data_pointer` instead of the raw blob.
 - Instant OpenAPI + Scalar docs available at `/openapi.json` and `/docs`.
 - Designed for append-only auditing: no update/delete mutations.
 
