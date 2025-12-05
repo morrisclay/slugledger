@@ -8,7 +8,7 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 - Live Scalar docs at `http://<worker-domain>/docs`, powered by the `/openapi.json` endpoint in this repo.
 
 ### Highlights
-- Event-centric POST endpoint (`/events`) for capturing workflow lifecycle data with optional custom IDs.
+- Event-centric POST endpoint (`/events`) for capturing workflow lifecycle data with optional custom IDs; timestamps are auto-assigned on the server.
 - Instant OpenAPI + Scalar docs available at `/openapi.json` and `/docs`.
 - Designed for append-only auditing: no update/delete mutations.
 
@@ -86,7 +86,7 @@ Legacy `/jobs`, `/runs`, and `/executions` endpoints have been removed; use `/ev
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| `POST` | `/events` | Insert an event (id + ISO timestamp + JSON payload) into the `events` table. |
+| `POST` | `/events` | Insert an event (optional id + JSON payload). The server stamps the row with the current ISO timestamp. |
 | `GET`  | `/events` | Query events with optional filters (`id`, `after`, `before`, `limit`). |
 | `POST` | `/events/query` | Run a parameterized SQL query against the `events` table (read-only). |
 | `GET`  | `/openapi.json` | Machine-readable OpenAPI 3.1 document. |
@@ -98,13 +98,14 @@ curl -X POST http://localhost:8787/events \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $API_KEY" \
   -d '{
-    "ts": "2024-01-01T12:00:00.000Z",
     "payload": {
       "type": "workflow.notification",
       "run_id": "run-123"
     }
   }'
 ```
+
+The Worker responds with the assigned `id` and persists the payload with a freshly generated ISO8601 timestamp.
 
 ---
 

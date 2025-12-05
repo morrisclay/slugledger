@@ -13,8 +13,6 @@ echo "========================================="
 echo ""
 
 EVENT_ID="event-$(date +%s)"
-EVENT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
 # Test 1: POST /events
 echo "1. Testing POST /events"
 echo "-----------------------"
@@ -22,7 +20,6 @@ RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/events" \
   -H "Content-Type: application/json" \
   -d "{
     \"id\": \"$EVENT_ID\",
-    \"ts\": \"$EVENT_TS\",
     \"payload\": {
       \"type\": \"workflow.notification\",
       \"run_id\": \"$RUN_ID\"
@@ -53,6 +50,8 @@ echo "Response: $BODY"
 echo "HTTP Code: $HTTP_CODE"
 echo ""
 
+EVENT_TS_VALUE=$(echo "$BODY" | node -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const ts = data.events?.[0]?.ts ?? ''; process.stdout.write(ts);")
+
 if [ "$HTTP_CODE" != "200" ]; then
   echo "❌ Test 2 FAILED - Expected 200, got $HTTP_CODE"
 else
@@ -62,11 +61,14 @@ else
     echo "❌ Test 2 FAILED - Event not found in response"
   else
     echo "Event located: $EVENT_ID"
+    if [ -z "$EVENT_TS_VALUE" ]; then
+      echo "❌ Test 2 FAILED - Timestamp missing in stored event"
+    else
+      echo "Timestamp recorded: $EVENT_TS_VALUE"
+    }
   fi
 fi
 echo ""
-
-AUTO_EVENT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Test 3: POST /events without providing id
 echo "3. Testing POST /events without id"
@@ -74,7 +76,6 @@ echo "----------------------------------"
 RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/events" \
   -H "Content-Type: application/json" \
   -d "{
-    \"ts\": \"$AUTO_EVENT_TS\",
     \"payload\": {
       \"type\": \"workflow.notification\",
       \"detail\": \"auto-id\"
@@ -107,6 +108,8 @@ echo "Response: $BODY"
 echo "HTTP Code: $HTTP_CODE"
 echo ""
 
+AUTO_EVENT_TS_VALUE=$(echo "$BODY" | node -e "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(0, 'utf8')); const ts = data.events?.[0]?.ts ?? ''; process.stdout.write(ts);")
+
 if [ "$HTTP_CODE" != "200" ]; then
   echo "❌ Test 4 FAILED - Expected 200, got $HTTP_CODE"
 else
@@ -114,7 +117,11 @@ else
   if [ -z "$MATCH" ]; then
     echo "❌ Test 4 FAILED - Auto-generated event not found"
   else
-    echo "✅ Test 4 PASSED - Auto-generated event retrieved"
+    if [ -z "$AUTO_EVENT_TS_VALUE" ]; then
+      echo "❌ Test 4 FAILED - Timestamp missing for auto-generated event"
+    else
+      echo "✅ Test 4 PASSED - Auto-generated event retrieved with ts $AUTO_EVENT_TS_VALUE"
+    fi
   fi
 fi
 echo ""
