@@ -75,7 +75,7 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | `POST` | `/jobs` | Append a ledger entry. Optionally include `data` to persist JSON to R2 and `metadata` for contextual fields. |
-| `POST` | `/events` | Insert an event (id + ISO timestamp + JSON payload) into the `events` table. |
+| `POST` | `/events` | Insert an event (optional id + server-generated ISO timestamp + JSON payload) into the `events` table. |
 | `GET`  | `/events` | Query events with optional filters (`id`, `after`, `before`, `limit`). |
 | `GET`  | `/runs/:run_id` | List every entry for a run ordered by `created_at ASC`. |
 | `GET`  | `/runs/:run_id/latest` | Fetch the newest entry for a run. |
