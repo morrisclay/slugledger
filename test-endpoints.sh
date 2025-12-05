@@ -144,7 +144,6 @@ fi
 echo ""
 
 EVENT_ID="event-$(date +%s)"
-EVENT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Test 7: POST /events
 echo "7. Testing POST /events"
@@ -153,7 +152,6 @@ RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/events" \
   -H "Content-Type: application/json" \
   -d "{
     \"id\": \"$EVENT_ID\",
-    \"ts\": \"$EVENT_TS\",
     \"payload\": {
       \"type\": \"workflow.notification\",
       \"run_id\": \"$RUN_ID\"
@@ -197,15 +195,12 @@ else
 fi
 echo ""
 
-AUTO_EVENT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
 # Test 9: POST /events without providing id
 echo "9. Testing POST /events without id"
 echo "----------------------------------"
 RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/events" \
   -H "Content-Type: application/json" \
   -d "{
-    \"ts\": \"$AUTO_EVENT_TS\",
     \"payload\": {
       \"type\": \"workflow.notification\",
       \"detail\": \"auto-id\"

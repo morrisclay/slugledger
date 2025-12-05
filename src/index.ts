@@ -90,7 +90,6 @@ type JobRow = {
 
 type EventCreateRequest = {
 	id?: string
-	ts: string
 	payload: unknown
 }
 
@@ -283,7 +282,8 @@ const openApiSchema = {
 		'/events': {
 			post: {
 				summary: 'Create a new event entry',
-				description: 'Stores an event row in the `events` table. The payload is persisted as JSON text.',
+				description:
+					'Stores an event row in the `events` table. The server generates the timestamp automatically and the payload is persisted as JSON text.',
 				tags: ['Events'],
 				requestBody: {
 					required: true,
@@ -291,19 +291,13 @@ const openApiSchema = {
 						'application/json': {
 							schema: {
 								type: 'object',
-								required: ['ts', 'payload'],
+								required: ['payload'],
 								properties: {
 									id: {
 										type: 'string',
 										description:
 											'Unique identifier for the event (primary key). If omitted, a UUID is generated automatically.',
 										example: 'evt_123',
-									},
-									ts: {
-										type: 'string',
-										format: 'date-time',
-										description: 'ISO8601 timestamp representing when the event occurred',
-										example: '2024-01-01T12:00:00.000Z',
 									},
 									payload: {
 										type: 'object',
@@ -784,13 +778,11 @@ app.post('/events', async (c) => {
 			eventId = generateEventId()
 		}
 
-		if (!body.ts || typeof body.ts !== 'string' || !isIsoTimestamp(body.ts)) {
-			return c.json({ error: 'ts must be a valid ISO timestamp string' }, 400)
-		}
-
 		if (body.payload === undefined) {
 			return c.json({ error: 'payload is required' }, 400)
 		}
+
+		const timestamp = new Date().toISOString()
 
 		let payloadJson: string
 		try {
@@ -800,7 +792,7 @@ app.post('/events', async (c) => {
 		}
 
 		const stmt = c.env.DB.prepare(`INSERT INTO events (id, ts, payload) VALUES (?, ?, ?)`)
-		const result = await stmt.bind(eventId, body.ts, payloadJson).run()
+		const result = await stmt.bind(eventId, timestamp, payloadJson).run()
 
 		if (!result.success) {
 			return c.json({ error: 'Failed to insert event' }, 500)
