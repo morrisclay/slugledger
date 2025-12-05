@@ -100,6 +100,11 @@ type EventRow = {
 	payload: string
 }
 
+type EventQueryRequest = {
+	sql: string
+	params?: unknown[]
+}
+
 const app = new Hono<{ Bindings: CloudflareBindings; API_KEY?: string }>()
 
 // API Key Authentication Middleware
@@ -360,8 +365,8 @@ const openApiSchema = {
 				},
 			},
 			get: {
-				summary: 'Query events',
-				description: 'Returns events from the `events` table ordered by timestamp descending. Supports optional filters.',
+				summary: 'Get events',
+				description: 'Returns events from the `events` table ordered by timestamp descending. Use simple filters like id, before, after, and limit. For complex queries with nested JSON fields, use POST /events/query instead.',
 				tags: ['Events'],
 				parameters: [
 					{
@@ -419,6 +424,81 @@ const openApiSchema = {
 					},
 					'400': {
 						description: 'Bad request - invalid query params',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										error: { type: 'string' },
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		'/events/query': {
+			post: {
+				summary: 'Query events by SQL',
+				description:
+					'Execute a custom SQL query against the events table. Use json_extract() to query nested JSON fields in the payload. Supports parameterized queries with ? placeholders. Only SELECT statements are allowed for security.',
+				tags: ['Events'],
+				requestBody: {
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								required: ['sql'],
+								properties: {
+									sql: {
+										type: 'string',
+										description: 'SQL SELECT query. Use ? for parameter placeholders.',
+										example: "SELECT id, ts, json_extract(payload, '$.type') as type FROM events WHERE json_extract(payload, '$.user_id') = ?",
+									},
+									params: {
+										type: 'array',
+										description: 'Array of parameter values to bind to ? placeholders',
+										items: {
+											oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }],
+										},
+										example: ['user_123'],
+									},
+								},
+							},
+						},
+					},
+				},
+				responses: {
+					'200': {
+						description: 'Query results',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										results: {
+											type: 'array',
+											items: {
+												type: 'object',
+												additionalProperties: true,
+											},
+										},
+										meta: {
+											type: 'object',
+											properties: {
+												rows_read: { type: 'integer' },
+												duration_ms: { type: 'number' },
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					'400': {
+						description: 'Bad request - invalid SQL or parameters',
 						content: {
 							'application/json': {
 								schema: {
@@ -893,6 +973,55 @@ app.get('/events', async (c) => {
 	}
 })
 
+// POST /events/query
+// Execute a read-only SQL query against the events table
+app.post('/events/query', async (c) => {
+	try {
+		const body = await c.req.json<EventQueryRequest>()
+
+		if (!body.sql || typeof body.sql !== 'string') {
+			return c.json({ error: 'sql is required and must be a string' }, 400)
+		}
+
+		// Normalize and validate SQL - only allow SELECT statements
+		const normalizedSql = body.sql.trim().toLowerCase()
+		if (!normalizedSql.startsWith('select')) {
+			return c.json({ error: 'Only SELECT queries are allowed' }, 400)
+		}
+
+		// Block dangerous keywords
+		const dangerousKeywords = ['insert', 'update', 'delete', 'drop', 'alter', 'create', 'truncate', 'replace']
+		for (const keyword of dangerousKeywords) {
+			if (normalizedSql.includes(keyword)) {
+				return c.json({ error: `Query contains forbidden keyword: ${keyword}` }, 400)
+			}
+		}
+
+		const params = body.params || []
+		if (!Array.isArray(params)) {
+			return c.json({ error: 'params must be an array' }, 400)
+		}
+
+		const stmt = c.env.DB.prepare(body.sql)
+		const startTime = Date.now()
+		const result = await stmt.bind(...params).all()
+		const duration = Date.now() - startTime
+
+		if (!result.success) {
+			return c.json({ error: 'Query execution failed' }, 500)
+		}
+
+		return c.json({
+			results: result.results || [],
+			meta: {
+				rows_read: result.results?.length || 0,
+				duration_ms: duration,
+			},
+		}, 200)
+	} catch (error) {
+		return handleError(c, error)
+	}
+})
 
 // GET /runs/:run_id
 // Return all ledger entries for the run ordered by created_at ASC
