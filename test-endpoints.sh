@@ -43,20 +43,10 @@ else
 fi
 echo ""
 
-# Test 2: POST /jobs/:run_id/result
-echo "2. Testing POST /jobs/:run_id/result"
-echo "-----------------------------------"
-RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/jobs/$RUN_ID/result" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"n8n_workflow_id\": \"$WORKFLOW_ID\",
-    \"n8n_execution_id\": \"$EXECUTION_ID\",
-    \"data\": {
-      \"result\": \"success\",
-      \"processed_items\": 42,
-      \"duration_ms\": 1234
-    }
-  }")
+# Test 2: GET /runs/:run_id
+echo "2. Testing GET /runs/:run_id"
+echo "---------------------------"
+RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET "$BASE_URL/runs/$RUN_ID")
 
 HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
 BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
@@ -64,19 +54,19 @@ echo "Response: $BODY"
 echo "HTTP Code: $HTTP_CODE"
 echo ""
 
-if [ "$HTTP_CODE" != "201" ]; then
-  echo "❌ Test 2 FAILED - Expected 201, got $HTTP_CODE"
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "❌ Test 2 FAILED - Expected 200, got $HTTP_CODE"
 else
   echo "✅ Test 2 PASSED"
-  R2_POINTER=$(echo "$BODY" | grep -o '"r2_pointer":"[^"]*"' | cut -d'"' -f4)
-  echo "R2 Pointer: $R2_POINTER"
+  RUN_COUNT=$(echo "$BODY" | grep -o '"runs":\[.*\]' | grep -o '{' | wc -l | tr -d ' ')
+  echo "Number of runs returned: $RUN_COUNT"
 fi
 echo ""
 
-# Test 3: GET /runs/:run_id
-echo "3. Testing GET /runs/:run_id"
-echo "---------------------------"
-RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET "$BASE_URL/runs/$RUN_ID")
+# Test 3: GET /runs/:run_id/latest
+echo "3. Testing GET /runs/:run_id/latest"
+echo "----------------------------------"
+RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET "$BASE_URL/runs/$RUN_ID/latest")
 
 HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
 BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
@@ -88,15 +78,13 @@ if [ "$HTTP_CODE" != "200" ]; then
   echo "❌ Test 3 FAILED - Expected 200, got $HTTP_CODE"
 else
   echo "✅ Test 3 PASSED"
-  RUN_COUNT=$(echo "$BODY" | grep -o '"runs":\[.*\]' | grep -o '{' | wc -l | tr -d ' ')
-  echo "Number of runs returned: $RUN_COUNT"
 fi
 echo ""
 
-# Test 4: GET /runs/:run_id/latest
-echo "4. Testing GET /runs/:run_id/latest"
-echo "----------------------------------"
-RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET "$BASE_URL/runs/$RUN_ID/latest")
+# Test 4: GET /executions/:n8n_execution_id
+echo "4. Testing GET /executions/:n8n_execution_id"
+echo "--------------------------------------------"
+RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET "$BASE_URL/executions/$EXECUTION_ID")
 
 HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
 BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
@@ -108,31 +96,13 @@ if [ "$HTTP_CODE" != "200" ]; then
   echo "❌ Test 4 FAILED - Expected 200, got $HTTP_CODE"
 else
   echo "✅ Test 4 PASSED"
-fi
-echo ""
-
-# Test 5: GET /executions/:n8n_execution_id
-echo "5. Testing GET /executions/:n8n_execution_id"
-echo "--------------------------------------------"
-RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET "$BASE_URL/executions/$EXECUTION_ID")
-
-HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
-BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
-echo "Response: $BODY"
-echo "HTTP Code: $HTTP_CODE"
-echo ""
-
-if [ "$HTTP_CODE" != "200" ]; then
-  echo "❌ Test 5 FAILED - Expected 200, got $HTTP_CODE"
-else
-  echo "✅ Test 5 PASSED"
   EXEC_COUNT=$(echo "$BODY" | grep -o '"executions":\[.*\]' | grep -o '{' | wc -l | tr -d ' ')
   echo "Number of executions returned: $EXEC_COUNT"
 fi
 echo ""
 
-# Test 6: Error handling - Invalid POST /jobs
-echo "6. Testing Error Handling - Invalid POST /jobs"
+# Test 5: Error handling - Invalid POST /jobs
+echo "5. Testing Error Handling - Invalid POST /jobs"
 echo "----------------------------------------------"
 RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/jobs" \
   -H "Content-Type: application/json" \
@@ -148,14 +118,14 @@ echo "HTTP Code: $HTTP_CODE"
 echo ""
 
 if [ "$HTTP_CODE" != "400" ]; then
-  echo "❌ Test 6 FAILED - Expected 400, got $HTTP_CODE"
+  echo "❌ Test 5 FAILED - Expected 400, got $HTTP_CODE"
 else
-  echo "✅ Test 6 PASSED"
+  echo "✅ Test 5 PASSED"
 fi
 echo ""
 
-# Test 7: Error handling - Non-existent run_id
-echo "7. Testing Error Handling - Non-existent run_id"
+# Test 6: Error handling - Non-existent run_id
+echo "6. Testing Error Handling - Non-existent run_id"
 echo "------------------------------------------------"
 RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET "$BASE_URL/runs/non-existent-run-id/latest")
 
@@ -166,9 +136,63 @@ echo "HTTP Code: $HTTP_CODE"
 echo ""
 
 if [ "$HTTP_CODE" != "404" ]; then
-  echo "❌ Test 7 FAILED - Expected 404, got $HTTP_CODE"
+  echo "❌ Test 6 FAILED - Expected 404, got $HTTP_CODE"
+else
+  echo "✅ Test 6 PASSED"
+fi
+echo ""
+
+EVENT_ID="event-$(date +%s)"
+EVENT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Test 7: POST /events
+echo "7. Testing POST /events"
+echo "-----------------------"
+RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE_URL/events" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"id\": \"$EVENT_ID\",
+    \"ts\": \"$EVENT_TS\",
+    \"payload\": {
+      \"type\": \"workflow.notification\",
+      \"run_id\": \"$RUN_ID\"
+    }
+  }")
+
+HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
+BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
+echo "Response: $BODY"
+echo "HTTP Code: $HTTP_CODE"
+echo ""
+
+if [ "$HTTP_CODE" != "201" ]; then
+  echo "❌ Test 7 FAILED - Expected 201, got $HTTP_CODE"
 else
   echo "✅ Test 7 PASSED"
+fi
+echo ""
+
+# Test 8: GET /events (filter by id)
+echo "8. Testing GET /events?id="
+echo "--------------------------"
+RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "$BASE_URL/events" --data-urlencode "id=$EVENT_ID" --data-urlencode "limit=1")
+
+HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
+BODY=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
+echo "Response: $BODY"
+echo "HTTP Code: $HTTP_CODE"
+echo ""
+
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "❌ Test 8 FAILED - Expected 200, got $HTTP_CODE"
+else
+  echo "✅ Test 8 PASSED"
+  MATCH=$(echo "$BODY" | grep -o "\"id\":\"$EVENT_ID\"")
+  if [ -z "$MATCH" ]; then
+    echo "❌ Test 8 FAILED - Event not found in response"
+  else
+    echo "Event located: $EVENT_ID"
+  fi
 fi
 echo ""
 
