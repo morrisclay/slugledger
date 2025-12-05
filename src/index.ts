@@ -89,7 +89,7 @@ type JobRow = {
 }
 
 type EventCreateRequest = {
-	id: string
+	id?: string
 	ts: string
 	payload: unknown
 }
@@ -291,11 +291,12 @@ const openApiSchema = {
 						'application/json': {
 							schema: {
 								type: 'object',
-								required: ['id', 'ts', 'payload'],
+								required: ['ts', 'payload'],
 								properties: {
 									id: {
 										type: 'string',
-										description: 'Unique identifier for the event (primary key)',
+										description:
+											'Unique identifier for the event (primary key). If omitted, a UUID is generated automatically.',
 										example: 'evt_123',
 									},
 									ts: {
@@ -636,6 +637,20 @@ const isIsoTimestamp = (value: string) => {
 	return !Number.isNaN(Date.parse(value))
 }
 
+const generateEventId = () => {
+	const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+	if (cryptoApi?.randomUUID) {
+		return cryptoApi.randomUUID()
+	}
+
+	// Fallback RFC4122 v4 style generator if crypto.randomUUID is unavailable
+	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+		const random = Math.floor(Math.random() * 16)
+		const value = char === 'x' ? random : (random & 0x3) | 0x8
+		return value.toString(16)
+	})
+}
+
 // POST /jobs
 // Unified endpoint: Insert a new ledger row
 // - If `data` is present: upload to R2 and store pointer
@@ -759,8 +774,14 @@ app.post('/events', async (c) => {
 	try {
 		const body = await c.req.json<EventCreateRequest>()
 
-		if (!body.id || typeof body.id !== 'string') {
-			return c.json({ error: 'id is required' }, 400)
+		let eventId: string
+		if (body.id !== undefined) {
+			if (typeof body.id !== 'string' || body.id.trim().length === 0) {
+				return c.json({ error: 'id must be a non-empty string when provided' }, 400)
+			}
+			eventId = body.id.trim()
+		} else {
+			eventId = generateEventId()
 		}
 
 		if (!body.ts || typeof body.ts !== 'string' || !isIsoTimestamp(body.ts)) {
@@ -779,13 +800,13 @@ app.post('/events', async (c) => {
 		}
 
 		const stmt = c.env.DB.prepare(`INSERT INTO events (id, ts, payload) VALUES (?, ?, ?)`)
-		const result = await stmt.bind(body.id, body.ts, payloadJson).run()
+		const result = await stmt.bind(eventId, body.ts, payloadJson).run()
 
 		if (!result.success) {
 			return c.json({ error: 'Failed to insert event' }, 500)
 		}
 
-		return c.json({ success: true, id: body.id }, 201)
+		return c.json({ success: true, id: eventId }, 201)
 	} catch (error) {
 		if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
 			return c.json({ error: 'Event with this id already exists' }, 409)
