@@ -31,7 +31,7 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 3. **Verify Wrangler bindings**  
    Update `wrangler.jsonc` with your own `r2_buckets`, `d1_databases`, and production `vars` if they differ from the defaults.
 
-4. **Create the D1 table (one-time)**
+4. **Create the D1 tables (one-time)**  
    Run the following SQL against your D1 database (via the dashboard, `wrangler d1 execute`, or migrations):
    ```sql
    CREATE TABLE IF NOT EXISTS jobs (
@@ -47,6 +47,13 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
    );
    CREATE INDEX IF NOT EXISTS idx_jobs_run_id ON jobs(run_id);
    CREATE INDEX IF NOT EXISTS idx_jobs_execution ON jobs(n8n_execution_id);
+
+   CREATE TABLE IF NOT EXISTS events (
+     id TEXT PRIMARY KEY,
+     ts TEXT NOT NULL,
+     payload TEXT NOT NULL CHECK (json_valid(payload))
+   );
+   CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
    ```
 
 5. **Run the worker locally**
@@ -70,6 +77,8 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | `POST` | `/jobs` | Append a ledger entry. Optionally include `data` to persist JSON to R2 and `metadata` for contextual fields. |
+| `POST` | `/events` | Insert an event (id + ISO timestamp + JSON payload) into the `events` table. |
+| `GET`  | `/events` | Query events with optional filters (`id`, `after`, `before`, `limit`). |
 | `GET`  | `/runs/:run_id` | List every entry for a run ordered by `created_at ASC`. |
 | `GET`  | `/runs/:run_id/latest` | Fetch the newest entry for a run. |
 | `GET`  | `/executions/:n8n_execution_id` | List entries for a single n8n execution. |

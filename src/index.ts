@@ -88,6 +88,18 @@ type JobRow = {
 	created_at: string
 }
 
+type EventCreateRequest = {
+	id: string
+	ts: string
+	payload: unknown
+}
+
+type EventRow = {
+	id: string
+	ts: string
+	payload: string
+}
+
 const app = new Hono<{ Bindings: CloudflareBindings; API_KEY?: string }>()
 
 // API Key Authentication Middleware
@@ -254,6 +266,158 @@ const openApiSchema = {
 					},
 					'500': {
 						description: 'Internal server error',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										error: { type: 'string' },
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		'/events': {
+			post: {
+				summary: 'Create a new event entry',
+				description: 'Stores an event row in the `events` table. The payload is persisted as JSON text.',
+				tags: ['Events'],
+				requestBody: {
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								required: ['id', 'ts', 'payload'],
+								properties: {
+									id: {
+										type: 'string',
+										description: 'Unique identifier for the event (primary key)',
+										example: 'evt_123',
+									},
+									ts: {
+										type: 'string',
+										format: 'date-time',
+										description: 'ISO8601 timestamp representing when the event occurred',
+										example: '2024-01-01T12:00:00.000Z',
+									},
+									payload: {
+										type: 'object',
+										description: 'Arbitrary JSON payload describing the event',
+										additionalProperties: true,
+										example: { type: 'user.signup', user_id: 'user_42' },
+									},
+								},
+							},
+						},
+					},
+				},
+				responses: {
+					'201': {
+						description: 'Event created successfully',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										success: { type: 'boolean', example: true },
+										id: { type: 'string', example: 'evt_123' },
+									},
+								},
+							},
+						},
+					},
+					'400': {
+						description: 'Bad request - validation error',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										error: { type: 'string', example: 'Missing required fields' },
+									},
+								},
+							},
+						},
+					},
+					'409': {
+						description: 'Duplicate event id',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										error: { type: 'string', example: 'Event with this id already exists' },
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			get: {
+				summary: 'Query events',
+				description: 'Returns events from the `events` table ordered by timestamp descending. Supports optional filters.',
+				tags: ['Events'],
+				parameters: [
+					{
+						name: 'limit',
+						in: 'query',
+						required: false,
+						schema: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+						description: 'Maximum number of events to return (default 100, max 500)',
+					},
+					{
+						name: 'after',
+						in: 'query',
+						required: false,
+						schema: { type: 'string', format: 'date-time' },
+						description: 'Return events with timestamps strictly greater than this ISO timestamp',
+					},
+					{
+						name: 'before',
+						in: 'query',
+						required: false,
+						schema: { type: 'string', format: 'date-time' },
+						description: 'Return events with timestamps strictly less than this ISO timestamp',
+					},
+					{
+						name: 'id',
+						in: 'query',
+						required: false,
+						schema: { type: 'string' },
+						description: 'Return a specific event by id',
+					},
+				],
+				responses: {
+					'200': {
+						description: 'List of events',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										events: {
+											type: 'array',
+											items: {
+												type: 'object',
+												properties: {
+													id: { type: 'string' },
+													ts: { type: 'string', format: 'date-time' },
+													payload: { type: 'object', additionalProperties: true },
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					'400': {
+						description: 'Bad request - invalid query params',
 						content: {
 							'application/json': {
 								schema: {
@@ -468,6 +632,10 @@ function handleError(c: Context, error: unknown, statusCode: number = 500) {
 	return c.json({ error: message }, statusCode)
 }
 
+const isIsoTimestamp = (value: string) => {
+	return !Number.isNaN(Date.parse(value))
+}
+
 // POST /jobs
 // Unified endpoint: Insert a new ledger row
 // - If `data` is present: upload to R2 and store pointer
@@ -580,6 +748,125 @@ app.post('/jobs', async (c) => {
 		}
 
 		return c.json(response, 201)
+	} catch (error) {
+		return handleError(c, error)
+	}
+})
+
+// POST /events
+// Insert a new event row into the events table
+app.post('/events', async (c) => {
+	try {
+		const body = await c.req.json<EventCreateRequest>()
+
+		if (!body.id || typeof body.id !== 'string') {
+			return c.json({ error: 'id is required' }, 400)
+		}
+
+		if (!body.ts || typeof body.ts !== 'string' || !isIsoTimestamp(body.ts)) {
+			return c.json({ error: 'ts must be a valid ISO timestamp string' }, 400)
+		}
+
+		if (body.payload === undefined) {
+			return c.json({ error: 'payload is required' }, 400)
+		}
+
+		let payloadJson: string
+		try {
+			payloadJson = JSON.stringify(body.payload)
+		} catch {
+			return c.json({ error: 'payload must be JSON-serializable' }, 400)
+		}
+
+		const stmt = c.env.DB.prepare(`INSERT INTO events (id, ts, payload) VALUES (?, ?, ?)`)
+		const result = await stmt.bind(body.id, body.ts, payloadJson).run()
+
+		if (!result.success) {
+			return c.json({ error: 'Failed to insert event' }, 500)
+		}
+
+		return c.json({ success: true, id: body.id }, 201)
+	} catch (error) {
+		if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+			return c.json({ error: 'Event with this id already exists' }, 409)
+		}
+		return handleError(c, error)
+	}
+})
+
+// GET /events
+// Query event rows with optional filters
+app.get('/events', async (c) => {
+	try {
+		const limitParam = c.req.query('limit')
+		let limit = 100
+		if (limitParam !== undefined) {
+			const parsed = Number.parseInt(limitParam, 10)
+			if (Number.isNaN(parsed) || parsed <= 0) {
+				return c.json({ error: 'limit must be a positive integer' }, 400)
+			}
+			limit = Math.min(parsed, 500)
+		}
+
+		const after = c.req.query('after')
+		if (after && !isIsoTimestamp(after)) {
+			return c.json({ error: 'after must be a valid ISO timestamp' }, 400)
+		}
+
+		const before = c.req.query('before')
+		if (before && !isIsoTimestamp(before)) {
+			return c.json({ error: 'before must be a valid ISO timestamp' }, 400)
+		}
+
+		const eventId = c.req.query('id')
+
+		const conditions: string[] = []
+		const values: unknown[] = []
+
+		if (eventId) {
+			conditions.push('id = ?')
+			values.push(eventId)
+		}
+
+		if (after) {
+			conditions.push('ts > ?')
+			values.push(after)
+		}
+
+		if (before) {
+			conditions.push('ts < ?')
+			values.push(before)
+		}
+
+		let query = 'SELECT * FROM events'
+		if (conditions.length > 0) {
+			query += ` WHERE ${conditions.join(' AND ')}`
+		}
+		query += ' ORDER BY ts DESC LIMIT ?'
+		values.push(limit)
+
+		const stmt = c.env.DB.prepare(query)
+		const result = await stmt.bind(...values).all<EventRow>()
+
+		if (!result.success) {
+			return c.json({ error: 'Failed to fetch events' }, 500)
+		}
+
+		const events = (result.results || []).map((event) => {
+			let parsedPayload: unknown = null
+			try {
+				parsedPayload = event.payload ? JSON.parse(event.payload) : null
+			} catch {
+				parsedPayload = event.payload
+			}
+			return {
+				id: event.id,
+				ts: event.ts,
+				payload: parsedPayload,
+			}
+		})
+
+		return c.json({ events }, 200)
 	} catch (error) {
 		return handleError(c, error)
 	}
