@@ -11,7 +11,7 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 ---
 
 ## Prerequisites
-- Node.js 18+ and npm (or pnpm) installed locally.
+- Node.js 18+ and npm installed locally.
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) v4.4+ authenticated against your Cloudflare account.
 - A Cloudflare D1 database and R2 bucket (Wrangler bindings already scaffolded in `wrangler.jsonc`; adjust names/IDs to your environment).
 
@@ -21,8 +21,6 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
 1. **Install dependencies**
    ```bash
    npm install
-   # or
-   pnpm install
    ```
 
 2. **Configure secrets**  
