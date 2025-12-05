@@ -26,7 +26,7 @@ Slugledger is an append-only event ledger that runs entirely on Cloudflare Worke
 
 ### Operational characteristics
 
-- **Append-only safety** – No update/delete handlers ship in the Worker. Deprecation guardrails keep legacy `/jobs`, `/runs`, and `/executions` endpoints alive with HTTP 410 responses.
+- **Append-only safety** – Only `/events` endpoints are exposed; legacy `/jobs`, `/runs`, and `/executions` handlers have been removed to keep the surface area small.
 - **API-key gate** – Require either `Authorization: Bearer <token>` or `X-API-Key` with the value stored in `.dev.vars` / Worker vars.
 - **Instant docs + testing** – Scalar makes it easy for teammates to explore endpoints without curling by hand.
 
