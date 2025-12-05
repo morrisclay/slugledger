@@ -2,6 +2,11 @@
 
 Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records the lifecycle of your [n8n](https://n8n.io/) workflows in D1 (metadata) and optionally streams large JSON payloads into R2 for inexpensive, durable storage. The API is implemented with [Hono](https://hono.dev/), documented via Scalar, and secured with a simple API-key gate.
 
+## Documentation
+- [`docs/about.md`](./docs/about.md) – background on the service’s goals, architecture, and operational guarantees.
+- [`docs/getting-started.md`](./docs/getting-started.md) – step-by-step local setup, testing, and deployment flow.
+- Live Scalar docs at `http://<worker-domain>/docs`, powered by the `/openapi.json` endpoint in this repo.
+
 ### Highlights
 - Event-centric POST endpoint (`/events`) for capturing workflow lifecycle data with optional custom IDs.
 - Instant OpenAPI + Scalar docs available at `/openapi.json` and `/docs`.
@@ -59,7 +64,13 @@ Slugledger is an append-only ledger exposed as a Cloudflare Worker. It records t
    ```
    Wrangler exposes the worker at `http://127.0.0.1:8787` (or `http://localhost:8787`). Open `http://localhost:8787/docs` for interactive API docs.
 
-6. **Run the smoke-test script (optional)**
+6. **Test with Scalar**
+   - Browse to `http://127.0.0.1:8787/docs`.
+   - Click **Authorize** and paste the same API key you configured in `.dev.vars`.
+   - Expand the `POST /events` operation, click **Try it out**, and ship a sample payload to confirm D1 writes succeed.
+   - Inspect saved requests/responses or explore other operations (e.g., `GET /events`, `POST /events/query`) without needing curl.
+
+7. **Run the smoke-test script (optional)**
    With the dev server running, execute:
    ```bash
    ./test-endpoints.sh
@@ -115,6 +126,27 @@ Deploy the worker (and run any pending D1 migrations) with:
 npm run deploy
 ```
 Wrangler automatically bundles the Worker, uploads it to Cloudflare, and wires the configured R2/D1 bindings.
+
+### Continuous deployment with Cloudflare Workers
+- **GitHub → Workers Deployments**: Install the [Cloudflare Workers GitHub App](https://developers.cloudflare.com/workers/wrangler/ci-cd/#deploy-from-github) so pushes to your main branch automatically trigger builds and deploys via Wrangler in Cloudflare’s CI/CD service.
+- **GitHub Actions**: Alternatively, add a workflow that invokes Wrangler directly. Example:
+  ```yaml
+  name: Deploy Worker
+  on:
+    push:
+      branches: [main]
+  jobs:
+    deploy:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: cloudflare/wrangler-action@v3
+          with:
+            apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+            accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+            command: deploy --minify
+  ```
+  Store an API token (Workers Scripts + D1 edit permissions) and your account ID in repository secrets; every push to `main` will now redeploy the Worker the same way `npm run deploy` does.
 
 ---
 
